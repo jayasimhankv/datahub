@@ -1,9 +1,8 @@
 import logging
 import os
 from datetime import timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
-import pydantic
 from google.cloud import bigquery
 from google.cloud.logging_v2.client import Client as GCPLoggingClient
 from pydantic import Field, PositiveInt, PrivateAttr, root_validator, validator
@@ -120,12 +119,12 @@ class BigQueryV2Config(
         description="Generate usage statistic",
     )
 
-    capture_table_label_as_tag: bool = Field(
+    capture_table_label_as_tag: Union[bool, AllowDenyPattern] = Field(
         default=False,
         description="Capture BigQuery table labels as DataHub tag",
     )
 
-    capture_dataset_label_as_tag: bool = Field(
+    capture_dataset_label_as_tag: Union[bool, AllowDenyPattern] = Field(
         default=False,
         description="Capture BigQuery dataset labels as DataHub tag",
     )
@@ -212,20 +211,10 @@ class BigQueryV2Config(
     )
 
     extract_column_lineage: bool = Field(
-        # TODO: Flip this default to True once we support patching column-level lineage.
         default=False,
         description="If enabled, generate column level lineage. "
-        "Requires lineage_use_sql_parser to be enabled. "
-        "This and `incremental_lineage` cannot both be enabled.",
+        "Requires lineage_use_sql_parser to be enabled.",
     )
-
-    @pydantic.validator("extract_column_lineage")
-    def validate_column_lineage(cls, v: bool, values: Dict[str, Any]) -> bool:
-        if v and values.get("incremental_lineage"):
-            raise ValueError(
-                "Cannot enable `extract_column_lineage` and `incremental_lineage` at the same time."
-            )
-        return v
 
     extract_lineage_from_catalog: bool = Field(
         default=False,
@@ -291,11 +280,17 @@ class BigQueryV2Config(
         description="Option to exclude empty projects from being ingested.",
     )
 
+    schema_resolution_batch_size: int = Field(
+        default=100,
+        description="The number of tables to process in a batch when resolving schema from DataHub.",
+        hidden_from_schema=True,
+    )
+
     @root_validator(skip_on_failure=True)
     def profile_default_settings(cls, values: Dict) -> Dict:
         # Extra default SQLAlchemy option for better connection pooling and threading.
         # https://docs.sqlalchemy.org/en/14/core/pooling.html#sqlalchemy.pool.QueuePool.params.max_overflow
-        values["options"].setdefault("max_overflow", values["profiling"].max_workers)
+        values["options"].setdefault("max_overflow", -1)
 
         return values
 

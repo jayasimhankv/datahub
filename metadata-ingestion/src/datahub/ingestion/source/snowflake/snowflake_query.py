@@ -558,6 +558,7 @@ class SnowflakeQuery:
         include_top_n_queries: bool,
         email_domain: Optional[str],
         email_filter: AllowDenyPattern,
+        table_deny_pattern: List[str] = DEFAULT_TABLES_DENY_LIST,
     ) -> str:
         if not include_top_n_queries:
             top_n_queries = 0
@@ -565,6 +566,12 @@ class SnowflakeQuery:
             time_bucket_size == BucketDuration.DAY
             or time_bucket_size == BucketDuration.HOUR
         )
+
+        temp_table_filter = create_deny_regex_sql_filter(
+            table_deny_pattern,
+            ["object_name"],
+        )
+
         objects_column = (
             "BASE_OBJECTS_ACCESSED" if use_base_objects else "DIRECT_OBJECTS_ACCESSED"
         )
@@ -604,6 +611,7 @@ class SnowflakeQuery:
                 )
                 t,
                 lateral flatten(input => t.{objects_column}) object
+            {("where " + temp_table_filter) if temp_table_filter else ""}
         )
         ,
         field_access_history AS
@@ -773,7 +781,7 @@ class SnowflakeQuery:
             SELECT
                 r.value : "objectName" :: varchar AS upstream_table_name,
                 r.value : "objectDomain" :: varchar AS upstream_table_domain,
-                w.value : "objectName" :: varchar AS downstream_table_name,
+                REPLACE(w.value : "objectName" :: varchar, '__DBT_TMP', '') AS downstream_table_name,
                 w.value : "objectDomain" :: varchar AS downstream_table_domain,
                 wcols.value : "columnName" :: varchar AS downstream_column_name,
                 wcols_directSources.value : "objectName" as upstream_column_table_name,
